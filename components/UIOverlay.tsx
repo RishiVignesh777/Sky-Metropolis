@@ -2,9 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useEffect, useRef } from 'react';
-import { BuildingType, CityStats, CityGoal, NewsItem } from '../types';
-import { BUILDINGS } from '../constants';
+import React, { useEffect, useRef, useState } from 'react';
+import { BuildingType, CityStats, CityGoal, NewsItem, WeatherType, TimeOfDayPhase } from '../types';
+import { BUILDINGS, WEATHERS, TIME_PHASES } from '../constants';
 
 interface UIOverlayProps {
   stats: CityStats;
@@ -13,6 +13,14 @@ interface UIOverlayProps {
   currentGoal: CityGoal | null;
   newsFeed: NewsItem[];
   onClaimReward: () => void;
+  time: number;
+  phase: TimeOfDayPhase;
+  weather: WeatherType;
+  timeSpeed: number;
+  onTogglePlayPause: () => void;
+  onSetTimeSpeed: (speed: number) => void;
+  onSetTime: (time: number) => void;
+  onSetWeather: (weather: WeatherType) => void;
 }
 
 const tools = [
@@ -76,8 +84,17 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
   currentGoal,
   newsFeed,
   onClaimReward,
+  time,
+  phase,
+  weather,
+  timeSpeed,
+  onTogglePlayPause,
+  onSetTimeSpeed,
+  onSetTime,
+  onSetWeather,
 }) => {
   const newsRef = useRef<HTMLDivElement>(null);
+  const [showEnvControls, setShowEnvControls] = useState(false);
 
   // Auto-scroll news
   useEffect(() => {
@@ -86,31 +103,160 @@ const UIOverlay: React.FC<UIOverlayProps> = ({
     }
   }, [newsFeed]);
 
+  // Format 12-hour clock
+  const hours = Math.floor(time);
+  const minutes = Math.floor((time % 1) * 60);
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const h12 = hours % 12 || 12;
+  const timeString = `${h12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+
+  const weatherConfig = WEATHERS[weather] || WEATHERS.clear;
+  const phaseConfig = TIME_PHASES[phase] || TIME_PHASES.day;
+
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-2 md:p-4 font-sans z-10">
       
-      {/* Top Bar: Stats & Goal */}
+      {/* Top Bar: Stats, Weather/Time, & Goal */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-start pointer-events-auto gap-2 w-full max-w-full">
         
-        {/* Stats */}
-        <div className="bg-gray-900/90 text-white p-2 md:p-3 rounded-xl border border-gray-700 shadow-2xl backdrop-blur-md flex gap-3 md:gap-6 items-center justify-between md:justify-start w-full md:w-auto">
-          <div className="flex flex-col">
-            <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Treasury</span>
-            <span className="text-lg md:text-2xl font-black text-green-400 font-mono drop-shadow-md">${stats.money.toLocaleString()}</span>
+        {/* Left: Stats & Time/Weather Pill */}
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+          {/* City Stats */}
+          <div className="bg-gray-900/90 text-white p-2 md:p-3 rounded-xl border border-gray-700 shadow-2xl backdrop-blur-md flex gap-3 md:gap-5 items-center justify-between sm:justify-start">
+            <div className="flex flex-col">
+              <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Treasury</span>
+              <span className="text-lg md:text-2xl font-black text-green-400 font-mono drop-shadow-md">${stats.money.toLocaleString()}</span>
+            </div>
+            <div className="w-px h-6 md:h-8 bg-gray-700"></div>
+            <div className="flex flex-col">
+              <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Citizens</span>
+              <span className="text-base md:text-xl font-bold text-blue-300 font-mono drop-shadow-md">{stats.population.toLocaleString()}</span>
+            </div>
+            <div className="w-px h-6 md:h-8 bg-gray-700"></div>
+            <div className="flex flex-col items-end">
+               <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Day</span>
+               <span className="text-base md:text-lg font-bold text-white font-mono">{stats.day}</span>
+            </div>
           </div>
-          <div className="w-px h-6 md:h-8 bg-gray-700"></div>
-          <div className="flex flex-col">
-            <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Citizens</span>
-            <span className="text-base md:text-xl font-bold text-blue-300 font-mono drop-shadow-md">{stats.population.toLocaleString()}</span>
-          </div>
-          <div className="w-px h-6 md:h-8 bg-gray-700"></div>
-          <div className="flex flex-col items-end">
-             <span className="text-[8px] md:text-[10px] text-gray-400 uppercase font-bold tracking-widest">Day</span>
-             <span className="text-base md:text-lg font-bold text-white font-mono">{stats.day}</span>
+
+          {/* Time & Weather Controller Pill */}
+          <div className="relative">
+            <div className="bg-slate-900/90 text-white p-2 md:p-3 rounded-xl border border-slate-700 shadow-2xl backdrop-blur-md flex items-center justify-between gap-2.5">
+              {/* Clock & Phase */}
+              <div 
+                onClick={() => setShowEnvControls(prev => !prev)}
+                className="flex items-center gap-1.5 cursor-pointer hover:opacity-85 transition-opacity"
+                title="Click to toggle weather & time controls"
+              >
+                <span className="text-sm md:text-base">{phaseConfig.icon}</span>
+                <div className="flex flex-col">
+                  <span className="text-[9px] md:text-[10px] text-amber-300 font-mono font-bold leading-tight">{timeString}</span>
+                  <span className="text-[8px] text-slate-400 uppercase font-bold tracking-wider leading-none">{phaseConfig.name}</span>
+                </div>
+              </div>
+
+              <div className="w-px h-6 bg-slate-700"></div>
+
+              {/* Weather Icon & Name */}
+              <div 
+                onClick={() => setShowEnvControls(prev => !prev)}
+                className="flex items-center gap-1.5 cursor-pointer hover:opacity-85 transition-opacity"
+                title="Click to change weather"
+              >
+                <span className="text-base md:text-lg">{weatherConfig.icon}</span>
+                <span className="text-[10px] md:text-xs font-bold text-slate-200">{weatherConfig.name}</span>
+              </div>
+
+              <div className="w-px h-6 bg-slate-700"></div>
+
+              {/* Play / Pause / Speed buttons */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={onTogglePlayPause}
+                  className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${timeSpeed === 0 ? 'bg-amber-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                  title={timeSpeed === 0 ? "Resume Time" : "Pause Time"}
+                >
+                  {timeSpeed === 0 ? '▶' : '⏸'}
+                </button>
+                <button
+                  onClick={() => onSetTimeSpeed(timeSpeed === 1 ? 2 : 1)}
+                  className={`px-1.5 h-6 rounded flex items-center justify-center text-[10px] font-mono font-bold transition-all cursor-pointer ${timeSpeed === 2 ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                  title="Toggle 1x / 2x Speed"
+                >
+                  {timeSpeed === 2 ? '2x' : '1x'}
+                </button>
+                <button
+                  onClick={() => setShowEnvControls(prev => !prev)}
+                  className={`w-6 h-6 rounded flex items-center justify-center text-[11px] transition-all cursor-pointer ${showEnvControls ? 'bg-indigo-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                  title="Weather & Time Presets"
+                >
+                  ⚙️
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Environment Controls Dropdown */}
+            {showEnvControls && (
+              <div className="absolute top-full left-0 mt-2 w-72 bg-slate-900/95 border border-slate-700 rounded-xl p-3 shadow-2xl backdrop-blur-xl z-50 text-white animate-fade-in">
+                <div className="flex justify-between items-center mb-2.5 pb-1 border-b border-slate-800">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Weather & Environment</span>
+                  <button 
+                    onClick={() => setShowEnvControls(false)}
+                    className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Weather Selectors */}
+                <div className="mb-3">
+                  <span className="text-[9px] text-slate-400 uppercase font-semibold block mb-1">Weather Condition</span>
+                  <div className="grid grid-cols-5 gap-1">
+                    {(Object.keys(WEATHERS) as WeatherType[]).map((wKey) => {
+                      const cfg = WEATHERS[wKey];
+                      const active = weather === wKey;
+                      return (
+                        <button
+                          key={wKey}
+                          onClick={() => onSetWeather(wKey)}
+                          className={`flex flex-col items-center justify-center py-1.5 rounded-lg border text-xs transition-all cursor-pointer ${active ? 'bg-cyan-600/40 border-cyan-400 text-white shadow-sm' : 'bg-slate-800/80 border-slate-700 hover:bg-slate-700 text-slate-300'}`}
+                          title={cfg.description}
+                        >
+                          <span>{cfg.icon}</span>
+                          <span className="text-[8px] font-medium leading-none mt-0.5">{cfg.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Time of Day Presets */}
+                <div>
+                  <span className="text-[9px] text-slate-400 uppercase font-semibold block mb-1">Time of Day</span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { label: 'Dawn', time: 6, icon: '🌅' },
+                      { label: 'Noon', time: 12, icon: '☀️' },
+                      { label: 'Dusk', time: 18, icon: '🌇' },
+                      { label: 'Night', time: 23, icon: '🌙' },
+                    ].map((t) => (
+                      <button
+                        key={t.label}
+                        onClick={() => onSetTime(t.time)}
+                        className="flex flex-col items-center justify-center py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs transition-all cursor-pointer"
+                      >
+                        <span>{t.icon}</span>
+                        <span className="text-[8px] font-medium leading-none mt-0.5">{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* City Objective Panel */}
+        {/* Right: City Objective Panel */}
         <div className="w-full md:w-80 bg-slate-900/95 text-white rounded-xl border-2 border-indigo-500/50 shadow-[0_0_20px_rgba(99,102,241,0.3)] backdrop-blur-md overflow-hidden transition-all">
           <div className="bg-indigo-950/90 px-3 md:px-4 py-1.5 md:py-2 flex justify-between items-center border-b border-indigo-700/60">
             <span className="font-bold uppercase text-[10px] md:text-xs tracking-widest flex items-center gap-2 shadow-sm text-indigo-200">

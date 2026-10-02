@@ -49,6 +49,17 @@ export interface CityGoal {
 
 export type AIGoal = CityGoal;
 
+export type WeatherType = 'clear' | 'rain' | 'storm' | 'fog' | 'snow';
+
+export type TimeOfDayPhase = 'dawn' | 'day' | 'dusk' | 'night';
+
+export interface EnvironmentState {
+  time: number; // 0 to 24 hours (e.g. 12 = noon, 0 = midnight)
+  timeSpeed: number; // 0 = paused, 1 = normal, 2 = fast
+  phase: TimeOfDayPhase;
+  weather: WeatherType;
+}
+
 export interface NewsItem {
   id: string;
   text: string;

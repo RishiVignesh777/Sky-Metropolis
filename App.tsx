@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Grid, TileData, BuildingType, CityStats, CityGoal, NewsItem } from './types';
-import { GRID_SIZE, BUILDINGS, TICK_RATE_MS, INITIAL_MONEY } from './constants';
+import { Grid, TileData, BuildingType, CityStats, CityGoal, NewsItem, WeatherType, TimeOfDayPhase } from './types';
+import { GRID_SIZE, BUILDINGS, TICK_RATE_MS, INITIAL_MONEY, DAY_CYCLE_SECONDS } from './constants';
 import IsoMap from './components/IsoMap';
 import UIOverlay from './components/UIOverlay';
 import StartScreen from './components/StartScreen';
-import { generateCityGoal, generateCityNews } from './services/cityService';
+import { generateCityGoal, generateCityNews, generateWeatherNews, generateTimePhaseNews } from './services/cityService';
 
 // Initialize empty grid with island shape generation for 3D visual interest
 const createInitialGrid = (): Grid => {
@@ -25,6 +25,14 @@ const createInitialGrid = (): Grid => {
   return grid;
 };
 
+// Compute time-of-day phase from hour (0 to 24)
+const getTimePhase = (h: number): TimeOfDayPhase => {
+  if (h >= 5 && h < 7.5) return 'dawn';
+  if (h >= 7.5 && h < 17) return 'day';
+  if (h >= 17 && h < 20) return 'dusk';
+  return 'night';
+};
+
 function App() {
   // --- Game State ---
   const [gameStarted, setGameStarted] = useState(false);
@@ -33,6 +41,13 @@ function App() {
   const [stats, setStats] = useState<CityStats>({ money: INITIAL_MONEY, population: 0, day: 1 });
   const [selectedTool, setSelectedTool] = useState<BuildingType>(BuildingType.Road);
   
+  // --- Day-Night Cycle & Weather State ---
+  const [time, setTime] = useState<number>(9.5); // Starts at 9:30 AM
+  const [timeSpeed, setTimeSpeed] = useState<number>(1); // 0 = pause, 1 = normal, 2 = fast
+  const [weather, setWeather] = useState<WeatherType>('clear');
+
+  const phase = getTimePhase(time);
+
   // --- City Objectives & News State ---
   const [currentGoal, setCurrentGoal] = useState<CityGoal | null>(null);
   const [newsFeed, setNewsFeed] = useState<NewsItem[]>([]);
@@ -42,11 +57,16 @@ function App() {
   const gridRef = useRef(grid);
   const statsRef = useRef(stats);
   const goalRef = useRef(currentGoal);
+  const timeSpeedRef = useRef(timeSpeed);
+  const weatherRef = useRef(weather);
+  const lastPhaseRef = useRef<TimeOfDayPhase>(phase);
 
   // Sync refs
   useEffect(() => { gridRef.current = grid; }, [grid]);
   useEffect(() => { statsRef.current = stats; }, [stats]);
   useEffect(() => { goalRef.current = currentGoal; }, [currentGoal]);
+  useEffect(() => { timeSpeedRef.current = timeSpeed; }, [timeSpeed]);
+  useEffect(() => { weatherRef.current = weather; }, [weather]);
 
   // --- News & Goal Handlers ---
 
@@ -62,8 +82,8 @@ function App() {
   }, []); 
 
   const fetchNews = useCallback(() => {
-    // 25% chance to post city news per tick
-    if (Math.random() > 0.25) return; 
+    // Occasional city news
+    if (Math.random() > 0.3) return; 
     const news = generateCityNews(statsRef.current, gridRef.current);
     if (news) addNewsItem(news);
   }, [addNewsItem]);
@@ -81,7 +101,57 @@ function App() {
     fetchNewGoal();
   }, [gameStarted, addNewsItem, fetchNewGoal]);
 
-  // --- Game Loop ---
+  // --- Day-Night Cycle & Natural Weather Engine ---
+  useEffect(() => {
+    if (!gameStarted) return;
+
+    const intervalMs = 200;
+    // In DAY_CYCLE_SECONDS (72s), 24 in-game hours pass at 1x speed.
+    const baseHourStep = (24 / DAY_CYCLE_SECONDS) * (intervalMs / 1000);
+
+    const timer = setInterval(() => {
+      const speed = timeSpeedRef.current;
+      if (speed <= 0) return;
+
+      setTime(prevTime => {
+        let newTime = prevTime + baseHourStep * speed;
+        let dayIncrement = 0;
+
+        if (newTime >= 24) {
+          newTime = newTime % 24;
+          dayIncrement = 1;
+        }
+
+        // Check if day-night phase transitioned
+        const newPhase = getTimePhase(newTime);
+        if (newPhase !== lastPhaseRef.current) {
+          lastPhaseRef.current = newPhase;
+          addNewsItem(generateTimePhaseNews(newPhase));
+
+          // At dawn (sunrise), 40% chance of weather forecast update
+          if (newPhase === 'dawn' && Math.random() < 0.4) {
+            const weatherKeys: WeatherType[] = ['clear', 'clear', 'rain', 'storm', 'fog', 'snow'];
+            const nextW = weatherKeys[Math.floor(Math.random() * weatherKeys.length)];
+            if (nextW !== weatherRef.current) {
+              setWeather(nextW);
+              addNewsItem(generateWeatherNews(nextW));
+            }
+          }
+        }
+
+        // Increment calendar day at midnight
+        if (dayIncrement > 0) {
+          setStats(s => ({ ...s, day: s.day + 1 }));
+        }
+
+        return newTime;
+      });
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [gameStarted, addNewsItem]);
+
+  // --- Game Loop (Economy & Citizen Growth) ---
   useEffect(() => {
     if (!gameStarted) return;
 
@@ -102,7 +172,7 @@ function App() {
 
       // Cap population growth by residential count
       const resCount = buildingCounts[BuildingType.Residential] || 0;
-      const maxPop = resCount * 50; // 50 people per house max
+      const maxPop = resCount * 50;
 
       // 2. Update Stats
       setStats(prev => {
@@ -113,7 +183,7 @@ function App() {
         const newStats = {
           money: prev.money + dailyIncome,
           population: newPop,
-          day: prev.day + 1,
+          day: prev.day, // Day increments on midnight pass in day-night cycle
         };
         
         // 3. Check Goal Completion
@@ -196,7 +266,6 @@ function App() {
         type: 'positive'
       });
       setCurrentGoal(null);
-      // Fetch next progression objective
       setTimeout(fetchNewGoal, 300);
     }
   };
@@ -205,14 +274,39 @@ function App() {
     setGameStarted(true);
   };
 
+  // Weather & Time Controls
+  const handleTogglePlayPause = useCallback(() => {
+    setTimeSpeed(prev => (prev === 0 ? 1 : 0));
+  }, []);
+
+  const handleSetTimeSpeed = useCallback((speed: number) => {
+    setTimeSpeed(speed);
+  }, []);
+
+  const handleSetTime = useCallback((newHour: number) => {
+    const clamped = Math.max(0, Math.min(23.99, newHour));
+    setTime(clamped);
+    const newPhase = getTimePhase(clamped);
+    lastPhaseRef.current = newPhase;
+    addNewsItem(generateTimePhaseNews(newPhase));
+  }, [addNewsItem]);
+
+  const handleSetWeather = useCallback((newW: WeatherType) => {
+    setWeather(newW);
+    addNewsItem(generateWeatherNews(newW));
+  }, [addNewsItem]);
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden selection:bg-transparent selection:text-transparent bg-sky-900">
-      {/* 3D Rendering Layer */}
+    <div className="relative w-screen h-screen overflow-hidden selection:bg-transparent selection:text-transparent bg-slate-950">
+      {/* 3D Rendering Layer with Dynamic Day-Night & Weather */}
       <IsoMap 
         grid={grid} 
         onTileClick={handleTileClick} 
         hoveredTool={selectedTool}
         population={stats.population}
+        time={time}
+        phase={phase}
+        weather={weather}
       />
       
       {/* Start Screen Overlay */}
@@ -229,6 +323,14 @@ function App() {
           currentGoal={currentGoal}
           newsFeed={newsFeed}
           onClaimReward={handleClaimReward}
+          time={time}
+          phase={phase}
+          weather={weather}
+          timeSpeed={timeSpeed}
+          onTogglePlayPause={handleTogglePlayPause}
+          onSetTimeSpeed={handleSetTimeSpeed}
+          onSetTime={handleSetTime}
+          onSetWeather={handleSetWeather}
         />
       )}
 

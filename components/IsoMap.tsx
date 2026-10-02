@@ -7,9 +7,10 @@ import { Canvas, useFrame, useThree, ThreeElements } from '@react-three/fiber';
 import { MapControls, Environment, SoftShadows, Instance, Instances, Float, useTexture, Outlines, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { MathUtils } from 'three';
-import { Grid, BuildingType, TileData } from '../types';
+import { Grid, BuildingType, TileData, WeatherType, TimeOfDayPhase } from '../types';
 import { GRID_SIZE, BUILDINGS } from '../constants';
 import { TrafficSystem } from './Vehicles';
+import { WeatherAndLighting, windowMaterial, streetlampGlowMat } from './WeatherAndLighting';
 
 // Fix for TypeScript not recognizing R3F elements in JSX
 declare global {
@@ -34,11 +35,9 @@ const sphereGeo = new THREE.SphereGeometry(1, 8, 8);
 
 // --- 1. Advanced Procedural Buildings ---
 
-// FIX: Wrap component in React.memo to ensure TypeScript recognizes it as a component that accepts a 'key' prop.
+// Dynamic Window Block: illuminates warmly at night and is soft blue reflective in daytime
 const WindowBlock = React.memo(({ position, scale }: { position: [number, number, number], scale: [number, number, number] }) => (
-  <mesh geometry={boxGeo} position={position} scale={scale}>
-    <meshStandardMaterial color="#bfdbfe" emissive="#bfdbfe" emissiveIntensity={0.2} roughness={0.1} metalness={0.8} />
-  </mesh>
+  <mesh geometry={boxGeo} position={position} scale={scale} material={windowMaterial} />
 ));
 
 const SmokeStack = ({ position }: { position: [number, number, number] }) => {
@@ -364,7 +363,7 @@ const PopulationSystem = ({ population, grid }: { population: number, grid: Grid
 };
 
 // Clouds & Birds
-const Cloud = ({ position, scale, speed }: { position: [number, number, number], scale: number, speed: number }) => {
+const Cloud = ({ position, scale, speed, color = "white" }: { position: [number, number, number], scale: number, speed: number, color?: string }) => {
     const group = useRef<THREE.Group>(null);
     useFrame((state, delta) => {
         if (group.current) {
@@ -382,7 +381,7 @@ const Cloud = ({ position, scale, speed }: { position: [number, number, number],
         <group ref={group} position={position} scale={scale}>
             {bubbles.map((b, i) => (
                 <mesh key={i} geometry={sphereGeo} position={b.pos} scale={b.scale} castShadow>
-                    <meshStandardMaterial color="white" flatShading opacity={0.9} transparent />
+                    <meshStandardMaterial color={color} flatShading opacity={0.9} transparent />
                 </mesh>
             ))}
         </group>
@@ -409,25 +408,37 @@ const Bird = ({ position, speed, offset }: { position: [number, number, number],
     )
 }
 
-const EnvironmentEffects = () => {
+const EnvironmentEffects = ({ phase, weather }: { phase: TimeOfDayPhase; weather: WeatherType }) => {
+    const isNight = phase === 'night';
+    const isStormy = weather === 'storm' || weather === 'rain';
+    const cloudColor = isStormy ? '#475569' : isNight ? '#334155' : 'white';
+
     return (
         <group raycast={() => null}>
              {/* Clouds */}
-            <Cloud position={[-12, 8, 4]} scale={1.5} speed={0.3} />
-            <Cloud position={[5, 9, -8]} scale={1.2} speed={0.5} />
-            <Cloud position={[15, 7, 10]} scale={1.8} speed={0.2} />
+            <Cloud position={[-12, 8, 4]} scale={1.5} speed={0.3} color={cloudColor} />
+            <Cloud position={[5, 9, -8]} scale={1.2} speed={0.5} color={cloudColor} />
+            <Cloud position={[15, 7, 10]} scale={1.8} speed={0.2} color={cloudColor} />
             
-            {/* Birds */}
-            <group position={[0, 0, 0]} scale={0.8}>
-                <Bird position={[0, 0, 10]} speed={0.6} offset={0} />
-                <Bird position={[0, 0, 10]} speed={0.6} offset={1.2} />
-                <Bird position={[0, 0, 10]} speed={0.6} offset={2.5} />
-            </group>
+            {/* Birds (rest at night or in heavy storms) */}
+            {!isNight && weather !== 'storm' && (
+              <group position={[0, 0, 0]} scale={0.8}>
+                  <Bird position={[0, 0, 10]} speed={0.6} offset={0} />
+                  <Bird position={[0, 0, 10]} speed={0.6} offset={1.2} />
+                  <Bird position={[0, 0, 10]} speed={0.6} offset={2.5} />
+              </group>
+            )}
 
-            {/* Water */}
+            {/* Water surrounding the island */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.6, 0]} receiveShadow>
                 <planeGeometry args={[GRID_SIZE * 4, GRID_SIZE * 4]} />
-                <meshStandardMaterial color="#3b82f6" roughness={0.1} metalness={0.5} opacity={0.8} transparent />
+                <meshStandardMaterial 
+                  color={isNight ? '#0b1329' : isStormy ? '#1e293b' : '#0284c7'} 
+                  roughness={isStormy ? 0.35 : 0.1} 
+                  metalness={0.5} 
+                  opacity={0.88} 
+                  transparent 
+                />
             </mesh>
         </group>
     )
@@ -481,6 +492,28 @@ interface GroundTileProps {
     onClick: (x: number, y: number) => void;
 }
 
+// Streetlight along roads that illuminates at night
+const Streetlight = React.memo(({ x, y, yOffset }: { x: number; y: number; yOffset: number }) => {
+  const hash = getHash(x, y);
+  if (hash > 0.45) return null;
+  const lampPos: [number, number, number] = hash < 0.22 ? [-0.42, yOffset, 0.42] : [0.42, yOffset, -0.42];
+
+  return (
+    <group position={lampPos}>
+      {/* Slender pole */}
+      <mesh geometry={cylinderGeo} position={[0, 0.22, 0]} scale={[0.02, 0.44, 0.02]}>
+        <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.3} />
+      </mesh>
+      {/* Lamp cover */}
+      <mesh geometry={boxGeo} position={[0, 0.44, 0]} scale={[0.07, 0.02, 0.07]}>
+        <meshStandardMaterial color="#0f172a" />
+      </mesh>
+      {/* Glowing bulb that lights up at dusk and night */}
+      <mesh geometry={boxGeo} position={[0, 0.42, 0]} scale={[0.045, 0.03, 0.045]} material={streetlampGlowMat} />
+    </group>
+  );
+});
+
 // Ground Tile: Handles pointer events and forms base terrain
 const GroundTile = React.memo(({ type, x, y, grid, onHover, onLeave, onClick }: GroundTileProps) => {
   const [wx, _, wz] = gridToWorld(x, y);
@@ -518,6 +551,7 @@ const GroundTile = React.memo(({ type, x, y, grid, onHover, onLeave, onClick }: 
       <boxGeometry args={[1, thickness, 1]} />
       <meshStandardMaterial color={color} flatShading roughness={1} />
       {type === BuildingType.Road && <RoadMarkings x={x} y={y} grid={grid} yOffset={thickness / 2 + 0.001} />}
+      {type === BuildingType.Road && <Streetlight x={x} y={y} yOffset={thickness / 2} />}
     </mesh>
   );
 });
@@ -540,9 +574,20 @@ interface IsoMapProps {
   onTileClick: (x: number, y: number) => void;
   hoveredTool: BuildingType;
   population: number;
+  time: number;
+  phase: TimeOfDayPhase;
+  weather: WeatherType;
 }
 
-const IsoMap: React.FC<IsoMapProps> = ({ grid, onTileClick, hoveredTool, population }) => {
+const IsoMap: React.FC<IsoMapProps> = ({ 
+  grid, 
+  onTileClick, 
+  hoveredTool, 
+  population,
+  time,
+  phase,
+  weather
+}) => {
   const [hoveredTile, setHoveredTile] = useState<{x: number, y: number} | null>(null);
 
   const handleHover = useCallback((x: number, y: number) => {
@@ -561,7 +606,7 @@ const IsoMap: React.FC<IsoMapProps> = ({ grid, onTileClick, hoveredTool, populat
   const previewPos = hoveredTile ? gridToWorld(hoveredTile.x, hoveredTile.y) : [0,0,0];
 
   return (
-    <div className="absolute inset-0 bg-sky-900 touch-none">
+    <div className="absolute inset-0 bg-slate-950 touch-none">
       <Canvas shadows dpr={[1, 1.5]} gl={{ antialias: true }}>
         <OrthographicCamera makeDefault zoom={45} position={[20, 20, 20]} near={-100} far={200} />
         
@@ -575,20 +620,9 @@ const IsoMap: React.FC<IsoMapProps> = ({ grid, onTileClick, hoveredTool, populat
           target={[0,-0.5,0]}
         />
 
-        <ambientLight intensity={0.5} color="#cceeff" />
-        <directionalLight
-          castShadow
-          position={[15, 20, 10]}
-          intensity={2}
-          color="#fffbeb"
-          shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-15} shadow-camera-right={15}
-          shadow-camera-top={15} shadow-camera-bottom={-15}
-        >
-        </directionalLight>
-        <Environment preset="city" />
+        <WeatherAndLighting time={time} phase={phase} weather={weather} />
 
-        <EnvironmentEffects />
+        <EnvironmentEffects phase={phase} weather={weather} />
 
         <group>
           {grid.map((row, y) =>

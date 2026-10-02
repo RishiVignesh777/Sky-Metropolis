@@ -302,6 +302,67 @@ const LOW_FUNDS_NEWS = [
   { text: "Treasury funds tight; city hall prioritizes high-yield commercial investments.", type: "negative" as const },
 ];
 
+const WEATHER_NEWS: Record<string, { text: string; type: "positive" | "negative" | "neutral" }[]> = {
+  clear: [
+    { text: "Skies clear up as sunshine spreads across the island archipelago.", type: "positive" },
+    { text: "Breezy sunny weather invites residents outdoors to city parks and patios.", type: "positive" },
+  ],
+  rain: [
+    { text: "Weather bulletin: Refreshing coastal rain showers sweep across SkyMetropolis.", type: "neutral" },
+    { text: "Rain patters on city streets; drivers switch on wipers and headlights.", type: "neutral" },
+  ],
+  storm: [
+    { text: "Thunderstorm warning! Lightning flashes illuminate the city skyline.", type: "negative" },
+    { text: "High winds and rolling thunder reported across coastal sectors.", type: "negative" },
+  ],
+  fog: [
+    { text: "Marine fog bank blankets the island harbor; fog horns echo across the bay.", type: "neutral" },
+    { text: "Dense mist wraps around towers, creating an ethereal morning atmosphere.", type: "neutral" },
+  ],
+  snow: [
+    { text: "Winter front arrives! Soft snowflakes begin drifting across rooftops and parks.", type: "positive" },
+    { text: "Light snowfall blankets the metropolis; children celebrate in town squares.", type: "positive" },
+  ],
+};
+
+const TIME_PHASE_NEWS: Record<string, { text: string; type: "positive" | "negative" | "neutral" }[]> = {
+  dawn: [
+    { text: "Dawn breaks over the eastern sea. Golden light warms the city island.", type: "positive" },
+    { text: "Early morning twilight gives way to sunrise; morning delivery routes begin.", type: "neutral" },
+  ],
+  day: [
+    { text: "Midday sun reaches its zenith; downtown commercial districts bustle with activity.", type: "positive" },
+  ],
+  dusk: [
+    { text: "Sunset paints the sky in shades of crimson and amber across the harbor.", type: "positive" },
+    { text: "Dusk settles over SkyMetropolis; streetlamps begin flickering to life.", type: "neutral" },
+  ],
+  night: [
+    { text: "Night falls over the island; residential windows glow warmly beneath the stars.", type: "neutral" },
+    { text: "Midnight quiet descends upon the city avenues under the silver moonlight.", type: "neutral" },
+  ],
+};
+
+export const generateWeatherNews = (weather: string): NewsItem => {
+  const items = WEATHER_NEWS[weather] || WEATHER_NEWS.clear;
+  const picked = items[Math.floor(Math.random() * items.length)];
+  return {
+    id: Date.now().toString() + Math.random().toString().slice(2, 6),
+    text: picked.text,
+    type: picked.type,
+  };
+};
+
+export const generateTimePhaseNews = (phase: string): NewsItem => {
+  const items = TIME_PHASE_NEWS[phase] || TIME_PHASE_NEWS.day;
+  const picked = items[Math.floor(Math.random() * items.length)];
+  return {
+    id: Date.now().toString() + Math.random().toString().slice(2, 6),
+    text: picked.text,
+    type: picked.type,
+  };
+};
+
 export const generateCityNews = (stats: CityStats, grid: Grid): NewsItem => {
   const counts: Record<string, number> = {};
   grid.flat().forEach(tile => {

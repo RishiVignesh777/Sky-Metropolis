@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { BuildingConfig, BuildingType } from './types';
+import { BuildingConfig, BuildingType, WeatherType, TimeOfDayPhase } from './types';
 
 // Map Settings
 export const GRID_SIZE = 15;
@@ -10,6 +10,24 @@ export const GRID_SIZE = 15;
 // Game Settings
 export const TICK_RATE_MS = 2000; // Game loop updates every 2 seconds
 export const INITIAL_MONEY = 1000;
+
+// Day-Night Cycle: Duration in real seconds for a full 24h day cycle at 1x speed
+export const DAY_CYCLE_SECONDS = 72; // ~3s per in-game hour
+
+export const WEATHERS: Record<WeatherType, { name: string; icon: string; description: string }> = {
+  clear: { name: 'Clear', icon: '☀️', description: 'Sunny & calm island skies' },
+  rain: { name: 'Rain', icon: '🌧️', description: 'Refreshing coastal rain' },
+  storm: { name: 'Storm', icon: '⛈️', description: 'Thunderstorm & lightning' },
+  fog: { name: 'Fog', icon: '🌫️', description: 'Dense marine mist' },
+  snow: { name: 'Snow', icon: '❄️', description: 'Gentle winter snowfall' },
+};
+
+export const TIME_PHASES: Record<TimeOfDayPhase, { name: string; icon: string }> = {
+  dawn: { name: 'Dawn', icon: '🌅' },
+  day: { name: 'Day', icon: '☀️' },
+  dusk: { name: 'Dusk', icon: '🌇' },
+  night: { name: 'Night', icon: '🌙' },
+};
 
 export const BUILDINGS: Record<BuildingType, BuildingConfig> = {
   [BuildingType.None]: {
